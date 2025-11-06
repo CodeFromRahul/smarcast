@@ -1,5 +1,4 @@
 import { StreamClient } from '@stream-io/node-sdk';
-import { SignJWT } from 'jose';
 
 const API_KEY = process.env.NEXT_PUBLIC_GETSTREAM_API_KEY!;
 const API_SECRET = process.env.GETSTREAM_API_SECRET!;
@@ -12,12 +11,8 @@ function getStreamClient(): StreamClient {
     if (!API_KEY || !API_SECRET) {
       throw new Error('GetStream credentials not configured. Please set NEXT_PUBLIC_GETSTREAM_API_KEY and GETSTREAM_API_SECRET in your .env file.');
     }
-    
-    // Correct initialization with object parameter
-    client = new StreamClient({
-      apiKey: API_KEY,
-      apiSecret: API_SECRET,
-    });
+    // Correct initialization with positional parameters (apiKey, apiSecret)
+    client = new StreamClient(API_KEY, API_SECRET);
   }
   return client;
 }
@@ -43,25 +38,25 @@ export interface WebinarResponse {
   };
 }
 
-// Generate JWT token for user using jose library
-export async function generateUserToken(userId: string, expiresIn: number = 7200): Promise<string> {
+// Generate JWT token for user using Stream SDK's createToken method
+// expiresIn is in seconds (e.g., 604800 = 7 days)
+export async function generateUserToken(userId: string, expiresIn: number = 604800): Promise<string> {
   try {
     if (!API_SECRET) {
       throw new Error('GETSTREAM_API_SECRET is not configured');
     }
 
-    const secret = new TextEncoder().encode(API_SECRET);
-    const issuedAt = Math.floor(Date.now() / 1000);
-    const expirationTime = issuedAt + expiresIn;
-
-    const token = await new SignJWT({
-      user_id: userId,
-    })
-      .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
-      .setIssuer('stream-sdk')
-      .setIssuedAt(issuedAt)
-      .setExpirationTime(expirationTime)
-      .sign(secret);
+    // Use Stream SDK's built-in token creation method
+    // createToken signature: createToken(userID: string, exp?: number, iat?: number)
+    // exp is Unix timestamp in seconds, not duration!
+    const streamClient = getStreamClient();
+    
+    // Calculate expiration timestamp (current time + expiresIn seconds)
+    const now = Math.floor(Date.now() / 1000); // Current time in seconds
+    const exp = now + expiresIn; // Expiration timestamp
+    
+    // Generate token with correct expiration timestamp
+    const token = streamClient.createToken(userId, exp);
 
     return token;
   } catch (error) {
@@ -91,7 +86,7 @@ export async function createWebinar(
           title: payload.title || 'Untitled Webinar',
           description: payload.description || '',
         },
-        starts_at: payload.starts_at,
+        starts_at: payload.starts_at ? new Date(payload.starts_at) : undefined,
         settings_override: {
           backstage: {
             enabled: true,
@@ -100,11 +95,12 @@ export async function createWebinar(
             enabled: true,
             hls: {
               auto_on: false,
+              quality_tracks: ['720p'],
             },
           },
           recording: {
             mode: 'available',
-            quality: 'high',
+            quality: '720p',
           },
         },
       },
@@ -114,8 +110,12 @@ export async function createWebinar(
       call: {
         id: response.call.id,
         type: response.call.type,
-        created_at: response.call.created_at,
-        updated_at: response.call.updated_at,
+        created_at: response.call.created_at instanceof Date 
+          ? response.call.created_at.toISOString() 
+          : response.call.created_at,
+        updated_at: response.call.updated_at instanceof Date 
+          ? response.call.updated_at.toISOString() 
+          : response.call.updated_at,
         created_by: response.call.created_by,
       },
     };
@@ -138,8 +138,12 @@ export async function getWebinar(callId: string): Promise<WebinarResponse> {
       call: {
         id: response.call.id,
         type: response.call.type,
-        created_at: response.call.created_at,
-        updated_at: response.call.updated_at,
+        created_at: response.call.created_at instanceof Date 
+          ? response.call.created_at.toISOString() 
+          : response.call.created_at,
+        updated_at: response.call.updated_at instanceof Date 
+          ? response.call.updated_at.toISOString() 
+          : response.call.updated_at,
         created_by: response.call.created_by,
       },
     };

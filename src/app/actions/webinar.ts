@@ -63,8 +63,8 @@ export async function createWebinarAction(
       throw new Error('Failed to create webinar');
     }
 
-    // Generate token for the user
-    const token = await generateUserToken(input.userId, 86400); // 24 hours
+    // Generate token for the user with 7 day expiry
+    const token = await generateUserToken(input.userId, 604800); // 7 days
 
     // Construct join URL
     const joinUrl = `/webinar/${webinarResponse.call.id}`;

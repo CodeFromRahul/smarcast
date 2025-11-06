@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useMemo, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { motion as m } from "framer-motion";
+import { motion } from "motion/react";
 import { toast } from "sonner";
 import { Video } from "lucide-react";
 
@@ -20,17 +20,30 @@ function useWebinar(id: string) {
 
 function useCountdown(targetISO: string) {
   const [diff, setDiff] = useState(0);
+  const [finished, setFinished] = useState(false);
+  
   useEffect(() => {
     if (!targetISO) return;
     const t = new Date(targetISO).getTime();
-    const i = setInterval(() => setDiff(Math.max(0, t - Date.now())), 1000);
+    const updateDiff = () => {
+      const now = Date.now();
+      const difference = t - now;
+      // Consider finished if time has passed or is within 5 minutes
+      const isFinished = difference <= 5 * 60 * 1000; // 5 minutes before or after
+      setFinished(isFinished);
+      setDiff(Math.max(0, difference));
+    };
+    updateDiff();
+    const i = setInterval(updateDiff, 1000);
     return () => clearInterval(i);
   }, [targetISO]);
+  
   const d = Math.floor(diff / (24 * 60 * 60 * 1000));
   const h = Math.floor((diff / (60 * 60 * 1000)) % 24);
   const m = Math.floor((diff / (60 * 1000)) % 60);
   const s = Math.floor((diff / 1000) % 60);
-  return { d, h, m, s, finished: diff === 0 };
+  
+  return { d, h, m, s, finished };
 }
 
 export default function WebinarLanding() {
@@ -56,7 +69,21 @@ export default function WebinarLanding() {
     return isNaN(d.getTime()) ? null : d;
   }, [dateTimeISO]);
 
+  // Check if the webinar date is today
+  const isToday = useMemo(() => {
+    if (!dateObj) return false;
+    const today = new Date();
+    return (
+      dateObj.getDate() === today.getDate() &&
+      dateObj.getMonth() === today.getMonth() &&
+      dateObj.getFullYear() === today.getFullYear()
+    );
+  }, [dateObj]);
+
   const { d, h, m, s, finished } = useCountdown(dateTimeISO);
+  
+  // Show "Join Stream" if finished OR if it's today (regardless of time)
+  const showJoinButton = finished || isToday;
 
   const handleJoinLivestream = () => {
     if (!data?.streamCallId) {
@@ -67,35 +94,35 @@ export default function WebinarLanding() {
   };
 
   if (!data) return (
-    <m.div
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       className="min-h-[60vh] grid place-items-center bg-black text-white"
     >
-      <m.div
+      <motion.div
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ duration: 0.3 }}
       >
         No webinar found
-      </m.div>
-    </m.div>
+      </motion.div>
+    </motion.div>
   );
 
   return (
     <div className="min-h-screen grid place-items-center px-6 py-10 bg-black text-white">
       <div className="text-center max-w-lg">
-        <m.h2
+        <motion.h2
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
           className="text-2xl font-medium mb-6"
         >
-          {finished ? "The webinar has started!" : "Seems like you are a little early"}
-        </m.h2>
+          {showJoinButton ? "The webinar has started!" : "Seems like you are a little early"}
+        </motion.h2>
         
-        {!finished && (
-          <m.div
+        {!showJoinButton && (
+          <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.1, duration: 0.4 }}
@@ -107,7 +134,7 @@ export default function WebinarLanding() {
               { label: 'Minutes', val: m },
               { label: 'Seconds', val: s }
             ].map((b, i) => (
-              <m.div
+              <motion.div
                 key={b.label}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -115,7 +142,7 @@ export default function WebinarLanding() {
                 whileHover={{ scale: 1.05, backgroundColor: "rgba(139, 92, 246, 0.1)" }}
                 className="rounded-md bg-white/5 border border-white/10 p-3 transition-colors"
               >
-                <m.div
+                <motion.div
                   key={b.val}
                   initial={{ scale: 1 }}
                   animate={{ scale: [1, 1.1, 1] }}
@@ -123,14 +150,14 @@ export default function WebinarLanding() {
                   className="text-2xl font-semibold tabular-nums"
                 >
                   {b.val.toString().padStart(2, '0')}
-                </m.div>
+                </motion.div>
                 <div className="text-xs text-white/60">{b.label}</div>
-              </m.div>
+              </motion.div>
             ))}
-          </m.div>
+          </motion.div>
         )}
 
-        <m.div
+        <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.4, duration: 0.4 }}
@@ -144,10 +171,10 @@ export default function WebinarLanding() {
             className="object-cover"
             unoptimized
           />
-        </m.div>
+        </motion.div>
 
-        {finished && data.streamCallId ? (
-          <m.div
+        {showJoinButton && data.streamCallId ? (
+          <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5 }}
@@ -161,9 +188,9 @@ export default function WebinarLanding() {
               <Video className="mr-2 h-5 w-5" />
               Join Livestream
             </Button>
-          </m.div>
+          </motion.div>
         ) : (
-          <m.div
+          <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5 }}
@@ -175,55 +202,55 @@ export default function WebinarLanding() {
             >
               Get Reminder
             </Button>
-          </m.div>
+          </motion.div>
         )}
 
-        <m.h3
+        <motion.h3
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.6 }}
           className="text-xl font-semibold"
         >
           {data.name}
-        </m.h3>
-        <m.p
+        </motion.h3>
+        <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.65 }}
           className="mt-1 text-sm text-white/70"
         >
           {data.description}
-        </m.p>
+        </motion.p>
         {dateObj && (
-          <m.div
+          <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.7 }}
             className="mt-5 flex items-center justify-center gap-2 text-sm"
           >
-            <m.div
+            <motion.div
               whileHover={{ scale: 1.05, backgroundColor: "rgba(139, 92, 246, 0.1)" }}
               className="rounded-md bg-white/5 border border-white/10 px-3 py-1 transition-colors"
             >
               {dateObj.toLocaleDateString()}
-            </m.div>
-            <m.div
+            </motion.div>
+            <motion.div
               whileHover={{ scale: 1.05, backgroundColor: "rgba(139, 92, 246, 0.1)" }}
               className="rounded-md bg-white/5 px-3 py-1 border border-white/10 transition-colors"
             >
               {dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </m.div>
-          </m.div>
+            </motion.div>
+          </motion.div>
         )}
         {data.streamCallId && (
-          <m.div
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.8 }}
             className="mt-4 text-xs text-white/40"
           >
             ✓ Powered by GetStream
-          </m.div>
+          </motion.div>
         )}
       </div>
     </div>

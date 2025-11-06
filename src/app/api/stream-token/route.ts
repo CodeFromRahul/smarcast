@@ -17,8 +17,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Generate token with 24 hour expiry
-    const token = await generateUserToken(userId, 86400);
+    // Generate token with 7 day expiry (604800 seconds) to avoid expiration issues
+    const token = await generateUserToken(userId, 604800);
 
     return NextResponse.json({
       token,

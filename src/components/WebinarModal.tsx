@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion as m } from "framer-motion";
 import { createWebinarAction } from "@/app/actions/webinar";
 import { toast } from "sonner";
+import { getCurrentUser, login } from "@/lib/auth";
 
 export type Webinar = {
   id: string;
@@ -27,6 +28,7 @@ export type Webinar = {
   thumbnail?: string;
   streamCallId?: string;
   streamToken?: string;
+  streamUserId?: string; // Store the userId that the token was generated for
 };
 
 function saveWebinar(w: Webinar) {
@@ -71,9 +73,21 @@ export function WebinarModal({ open, onOpenChange }: { open: boolean; onOpenChan
     setError(null);
 
     try {
+      // Get current user or create a default one
+      let currentUser = getCurrentUser();
+      if (!currentUser) {
+        // Auto-login with a default user for demo
+        currentUser = login('john@example.com') || {
+          id: `user-${Date.now()}`,
+          name: 'Host User',
+          email: 'host@example.com',
+          role: 'host' as const,
+        };
+      }
+
       const id = crypto.randomUUID();
       const webinarId = `webinar-${Date.now()}`;
-      const userId = `user-${Date.now()}`; // In production, use actual authenticated user ID
+      const userId = currentUser.id; // Use authenticated user ID
 
       // Combine date and time for starts_at
       let startsAt: string | undefined;
@@ -109,6 +123,7 @@ export function WebinarModal({ open, onOpenChange }: { open: boolean; onOpenChan
         id,
         streamCallId: result.callId,
         streamToken: result.token,
+        streamUserId: userId, // Store the userId that matches the token
       };
       
       saveWebinar(record);

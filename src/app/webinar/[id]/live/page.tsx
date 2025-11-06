@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   StreamVideo,
@@ -14,12 +14,14 @@ import "@stream-io/video-react-sdk/dist/css/styles.css";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { getCurrentUser, login } from "@/lib/auth";
 
 type Webinar = {
   id: string;
   name: string;
   streamCallId?: string;
   streamToken?: string;
+  streamUserId?: string; // The userId that the token was generated for
 };
 
 function useWebinar(id: string) {
@@ -150,6 +152,10 @@ export default function WebinarLivePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isHost, setIsHost] = useState(false);
+  
+  // Use refs to track client and call for cleanup
+  const clientRef = useRef<StreamVideoClient | null>(null);
+  const callRef = useRef<Call | null>(null);
 
   useEffect(() => {
     const initializeStream = async () => {
@@ -169,45 +175,78 @@ export default function WebinarLivePage() {
         const hasToken = !!webinar.streamToken;
         setIsHost(hasToken);
 
-        // Generate unique user ID
-        const userId = hasToken 
-          ? `host-${webinar.id}-${Date.now()}` 
-          : `viewer-${Date.now()}`;
+        // ALWAYS regenerate tokens to avoid expiration issues
+        // Get or generate user ID
+        let userId: string;
+        let userName: string;
         
-        let token = webinar.streamToken;
-
-        // Generate viewer token if needed
-        if (!token) {
-          const response = await fetch("/api/stream-token", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ userId }),
-          });
-
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.details || "Failed to generate token");
+        if (hasToken && webinar.streamUserId) {
+          // Host: Use the stored userId
+          userId = webinar.streamUserId;
+          const user = getCurrentUser();
+          userName = user?.name || "Host";
+        } else {
+          // Viewer: get current user or create a consistent viewer ID
+          let currentUser = getCurrentUser();
+          if (!currentUser) {
+            // Auto-login with a default viewer for demo
+            currentUser = login('viewer@example.com') || {
+              id: `viewer-${webinar.streamCallId}-${Date.now()}`,
+              name: 'Viewer',
+              email: 'viewer@example.com',
+              role: 'viewer' as const,
+            };
           }
-
-          const data = await response.json();
-          token = data.token;
+          userId = currentUser.id;
+          userName = currentUser.name;
         }
 
-        if (!token) {
-          throw new Error("No token available");
+        // ALWAYS generate a fresh token to avoid expiration
+        // Stored tokens can expire, so we regenerate them every time
+        console.log("Generating fresh token for userId:", userId);
+        const response = await fetch("/api/stream-token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.details || "Failed to generate token");
+        }
+
+        const data = await response.json();
+        const token = data.token;
+        
+        // Update stored token and userId for hosts
+        if (hasToken) {
+          const list = localStorage.getItem("webinars") || "[]";
+          const webinars: any[] = JSON.parse(list);
+          const updatedWebinars = webinars.map((w: any) => 
+            w.id === webinar.id 
+              ? { ...w, streamToken: token, streamUserId: userId }
+              : w
+          );
+          localStorage.setItem("webinars", JSON.stringify(updatedWebinars));
         }
 
         // Initialize Stream client
         const streamClient = new StreamVideoClient({
           apiKey,
-          user: {
-            id: userId,
-            name: hasToken ? "Host" : `Viewer ${userId.slice(-6)}`,
-          },
-          token,
         });
 
+        // Connect the user with fresh token
+        // The userId MUST match the userId used to generate the token
+        await streamClient.connectUser(
+          {
+            id: userId,
+            name: userName,
+          },
+          token
+        );
+
         setClient(streamClient);
+        clientRef.current = streamClient;
 
         // Get or create call
         const streamCall = streamClient.call("livestream", webinar.streamCallId);
@@ -216,6 +255,7 @@ export default function WebinarLivePage() {
         await streamCall.join({ create: hasToken });
         
         setCall(streamCall);
+        callRef.current = streamCall;
         
         if (hasToken) {
           toast.success("Welcome, Host! Click 'Go Live' to start broadcasting.");
@@ -236,12 +276,24 @@ export default function WebinarLivePage() {
     }
 
     return () => {
-      if (call) {
-        call.leave().catch(console.error);
-      }
-      if (client) {
-        client.disconnectUser().catch(console.error);
-      }
+      // Cleanup: leave call and disconnect user
+      const cleanup = async () => {
+        if (callRef.current) {
+          try {
+            await callRef.current.leave();
+          } catch (err) {
+            console.error("Error leaving call:", err);
+          }
+        }
+        if (clientRef.current) {
+          try {
+            await clientRef.current.disconnectUser();
+          } catch (err) {
+            console.error("Error disconnecting user:", err);
+          }
+        }
+      };
+      cleanup();
     };
   }, [webinar]);
 

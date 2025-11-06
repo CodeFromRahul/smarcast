@@ -44,6 +44,7 @@
         "@react-three/drei": "^10.4.4",
         "@react-three/fiber": "^9.0.0-alpha.8",
         "@stream-io/node-sdk": "^0.7.17",
+        "@stream-io/video-react-sdk": "^1.25.1",
         "@tabler/icons-react": "^3.35.0",
         "@tailwindcss/typography": "^0.5.16",
         "@tsparticles/engine": "^3.8.1",
