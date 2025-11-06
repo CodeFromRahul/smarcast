@@ -231,28 +231,48 @@ export default function WebinarLivePage() {
         }
 
         // Initialize Stream client
+        // Note: StreamVideoClient handles WebSocket connections automatically
         const streamClient = new StreamVideoClient({
           apiKey,
         });
 
         // Connect the user with fresh token
         // The userId MUST match the userId used to generate the token
-        await streamClient.connectUser(
-          {
-            id: userId,
-            name: userName,
-          },
-          token
-        );
+        try {
+          await streamClient.connectUser(
+            {
+              id: userId,
+              name: userName,
+            },
+            token
+          );
+        } catch (connectError: any) {
+          console.error("Error connecting user:", connectError);
+          throw new Error(`Failed to connect to Stream: ${connectError.message || 'Unknown error'}`);
+        }
 
         setClient(streamClient);
         clientRef.current = streamClient;
 
+        // Wait for WebSocket connection to establish (Stream SDK needs time to connect)
+        // The SFU connection is established asynchronously after connectUser
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
         // Get or create call
         const streamCall = streamClient.call("livestream", webinar.streamCallId);
         
-        // Join the call
-        await streamCall.join({ create: hasToken });
+        // Join the call - Stream SDK will handle WebSocket connection automatically
+        // The SFU connection happens when you join a call
+        try {
+          await streamCall.join({ create: hasToken });
+        } catch (joinError: any) {
+          // If join fails with WebSocket error, provide helpful message
+          if (joinError.message?.includes('WS') || joinError.message?.includes('WebSocket') || joinError.message?.includes('SFU')) {
+            console.error("WebSocket connection error:", joinError);
+            throw new Error("Failed to establish video connection. Please check your network connection and try again.");
+          }
+          throw joinError;
+        }
         
         setCall(streamCall);
         callRef.current = streamCall;
